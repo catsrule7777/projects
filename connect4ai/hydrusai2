@@ -1,0 +1,295 @@
+# coded by william allen
+# 2024 7th grade
+# written for 2024 STEM CVMS class
+# 'you choose' project
+# ctrl+enter or press the play button to run cell
+# run first cell once, then scroll down to bottom and run second cell as many times as you want to play
+
+
+#import stuff
+
+
+import math
+import random
+import copy
+
+#define constants
+PLAYER = 0
+AI = 1
+positionsAnalyzed = 0
+
+BOARD_WIDTH = 7
+BOARD_HEIGHT = 6 # row and column count
+
+WINDOW_LENGTH = 4
+#a buncha functions to help with minimax
+# no classes this time, buildTree() and minimax() will be combined for higher efficiency
+
+
+transposition_table = {} # this will store the move and score of mvoes so they do not have to be calculated multiple times
+
+def makeTuple(board):
+    return tuple(tuple(row) for row in board) # this helps make the keys for the dictionary I am using to make the transposition table
+
+def isValidLocation(board, column): # checks if a location on the board is a valid location
+    return board[BOARD_HEIGHT - 1][column] == "🔵"
+
+def getRow(board, column): # this makes the gravity work for the connect 4 by getting the lowest working row
+    for i in range(BOARD_HEIGHT):
+        if board[i][column] == "🔵":
+            return i
+
+def dropChip(board, row, column, color): # add a new chip to the current board
+    board[row][column] = color
+
+def undoChip(board, row, column): # remove a chip from the current board, making moves and then undoing can improve performance
+  board[row][column] = "🔵"
+
+def get_valid_locations(board): # get all the valid locations a chip can go
+    valid_locations = []
+    for i in range(BOARD_WIDTH):
+        if isValidLocation(board, i):
+            valid_locations.append(i)
+    return valid_locations
+
+def eval(board): # evaluate boards and assign them a score (heuristic)
+    score = 0
+    rows = len(board)
+    cols = len(board[0]) # eval function was copied and pasted from hydrus ai v1, rows and columns are boardheight and boardwidth
+
+    def score_line(line): # checks if there are 4, 3, or 2, in a row (helper function)
+        line_score = 0
+        for i in range(len(line) - 3):
+            window = line[i:i+4]
+            if window.count("🟡") == 4:
+                return -1000000
+            elif window.count("🔴") == 4:
+                return 1000000
+            elif window.count("🟡") == 3 and window.count("🔵") == 1:
+                line_score -= 100
+            elif window.count("🔴") == 3 and window.count("🔵") == 1:
+                line_score += 100
+            elif window.count("🟡") == 2 and window.count("🔵") == 2:
+                line_score -= 10
+            elif window.count("🔴") == 2 and window.count("🔵") == 2:
+                line_score += 10
+        return line_score
+
+    for i in board: # update scores
+        score += score_line(i)
+
+    for i in range(cols): # check vertical
+        col_array = [board[row][i] for row in range(rows)]
+        score += score_line(col_array)
+
+    for i in range(rows - 3): # check diagonal 1
+        for j in range(cols - 3):
+            window = [board[i+k][j+k] for k in range(4)]
+            score += score_line(window)
+
+    for i in range(rows - 3): # check diagonal 2
+        for j in range(3, cols):
+            window = [board[i+k][j-k] for k in range(4)]
+            score += score_line(window)
+
+    if all(cell != "🔵" for row in board for cell in row): # check for tie
+        return 0
+
+    return score #output score
+
+
+def minimax(board, depth, alpha, beta, maximizingPlayer): # actual ai part, takes in board, current depth, alpha and beta which start at inf and -inf, and if you are trying to maximize the player (bool)
+    global positionsAnalyzed # just checks how many position have been analyzed in total for a cool counter
+    board_key = makeTuple(board) # makes a unique key for the current board
+    if board_key in transposition_table and transposition_table[board_key]["depth"] >= depth: # checks if the key is already in the transposition table
+        return transposition_table[board_key]["move"], transposition_table[board_key]["score"] # if the key is in the transpostion table, no further calculation is nessecary
+
+   # valid_locations = get_valid_locations(board)
+
+    if depth == 0 or abs(eval(board)) > 9999: # base case for recursive function
+        return None, eval(board) # makes sure that function stops when specificed depth is reached or the game is over
+
+    if maximizingPlayer: #if ai's turn
+        maxEval = -math.inf #ai is trying to maximize the score so everything bigger than -inf will be good
+        sorted_locations = the_cooler_get_valid_locations(board, "🔴") # gets valid locations in an order that will make algorithm faster
+        best_col = random.choice(sorted_locations) # chooses a random best column to start, this will be changed soon
+
+        for col in sorted_locations: # loops through valid locations
+            row = getRow(board, col) #gets the row that a possible chip would be in if dropped
+            dropChip(board, row, col, "🔴") # drops a chip in the specified column
+            newEval = minimax(board, depth - 1, alpha, beta, False)[1] #recursively calls the function again on all children
+            positionsAnalyzed += 1 # updates positionsAnalyzed
+            undoChip(board, row, col) # undos the move to improve performance
+            if newEval > maxEval: # checks if score of children are better than current score
+                maxEval = newEval # if score is better, childrens score is current boards new score
+                best_col = col # best column is set to the column of the best child
+            alpha = max(alpha, maxEval) # updates alpha for alpha-beta pruning so if a move is extremely bad
+            if alpha >= beta: # if alpha and beta cross, do not evaluate more moves, this will drastically improve performance
+                break
+        transposition_table[board_key] = {'move': best_col, 'score': maxEval, 'depth': depth} # add the current board to transpostion table to ensure moves are not evaluated more than once
+        return best_col, maxEval # return best column and best score for the parent node/board
+    else: # same thing but player's turn so minimizing player
+        minEval = math.inf
+        sorted_locations = the_cooler_get_valid_locations(board, "🟡")
+        best_col = random.choice(sorted_locations)
+
+        for col in sorted_locations:
+            row = getRow(board, col)
+            dropChip(board, row, col, "🟡")
+            newEval = minimax(board, depth - 1, alpha, beta, True)[1]
+            positionsAnalyzed += 1
+            undoChip(board, row, col)
+            if newEval < minEval:
+                minEval = newEval
+                best_col = col
+            beta = min(beta, minEval)
+            if alpha >= beta:
+                break
+        transposition_table[board_key] = {'move': best_col, 'score': minEval, 'depth': depth}
+        return best_col, minEval
+
+
+def score_column(board, column, color): # makes certain columns more important than others
+    row = getRow(board, column)
+    temp_board = copy.deepcopy(board)
+    dropChip(temp_board, row, column, color)
+    return eval(temp_board)
+
+
+def the_cooler_get_valid_locations(board, color): # sorts valid locations to improve performance in the minimax() function
+  valid_locations = get_valid_locations(board)
+  scores = []
+  for i in valid_locations:
+   score = score_column(board, i, color)
+   scores.append((i, score))
+
+  def compare_scores(pair): # returns value of  second thing in tuple (helper function for the_cooler_get_valid_locations())
+    return pair[1]
+
+  sorted_scores = sorted(scores, key=compare_scores, reverse=True) # finishes sorting the scores
+
+  #fancy one line for loop
+
+  sorted_columns = [i for i, _ in sorted_scores] # assigns columns to scores
+  return sorted_columns # outputs the sorted columns
+
+def move(board, color): # calculates best move for AI based on scores
+    valid_locations = the_cooler_get_valid_locations(board)
+    '''
+    bestScore = -10000
+    bestMove = random.choice(valid_locations)
+    for i in valid_locations:
+        row = getRow(board, i)
+        newBoard = copy.deepcopy(board)
+        dropChip(newBoard, row, i, color)
+        score = eval(newBoard)
+        if score > bestScore:
+            bestScore = score
+            bestMove = i
+    '''
+    bestMove = valid_locations[0]
+    return bestMove
+
+board1 = [["🔵","🔵","🔵","🔵","🔵","🔵","🔵"], #board
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"]]
+
+
+def printBoard(board, row, column, color): # prints board out correctly
+  string = "   0  1  2  3  4  5  6\n"
+  for i in range(5, -1, -1):
+    string += str(i)
+    string += " "
+    for j in range (7):
+      #print(i, j)
+      #print(row, column)
+      if i == row and j == column:
+        string += color # makes the most recent move a square
+        string += " "
+      else:
+        string += board[i][j]
+        string += " "
+    string += "\n"
+  print(string)
+
+
+def game(board): # game
+    global positionsAnalyzed
+    global turn
+    while True:
+      difficulty = input("choose difficulty:\n1:Easy\n2:Medium\n3:Hard\n4:Extra Hard\n5:Extra Extra Hard\nEnter your difficulty! (Harder modes take longer to run)")
+      try:
+        difficulty = int(difficulty)
+        if difficulty == 1:
+          difficulty = 3
+          break
+        elif difficulty == 2:
+          difficulty = 4
+          break
+        elif difficulty == 3:
+          difficulty = 5
+          break
+        elif difficulty == 4:
+          difficulty = 6
+          break
+        elif difficulty == 5:
+          difficulty = 7
+          break
+        else:
+          print("please enter a valid input!\n")
+      except ValueError:
+        print("please enter a valid input!\n")
+
+
+    while True: # game loop
+        print("Calculating...")
+        col, score = minimax(board, difficulty, -math.inf, math.inf, True) # calls minimax function with depth 5
+        if isValidLocation(board, col): # checks if minimax output is valid location
+            row = getRow(board, col) # gets the row where the chip should go
+            dropChip(board, row, col, "🔴") # updates the board to the new one
+        printBoard(board, row, col, "🟥") # prints out the board again
+        print("eval:" + str(score)) # prints out the current eval
+        print("positions analyzed: " + str(positionsAnalyzed)) # prints positionsAnalyzed
+
+        if abs(eval(board)) > 9999: # checks if game is over after ai move
+          print("game over! you lost!")
+          return
+        while True:
+          try:
+            column = int(input("What column would you like to place your '🟡'?")) # ask player where they want to place their chip
+            if isValidLocation(board, column): # checks if location is a valid location
+                row = getRow(board, column) # gets the correct row for the chip to be dropped (gravity)
+                dropChip(board, row, column, "🟡") # updates the board
+            break
+          except ValueError:
+            print("Invalid input. Please enter a number!")
+          except LookupError:
+            print("Invalid input. Please enter a valid number!")
+
+        printBoard(board, row, column, "🟨") # prints out the board with the move on it
+        print("eval:" + str(score)) # prints out the eval
+
+        if abs(eval(board)) > 9999: # checks if game is over after player move
+          print("game over! you won!")
+          return
+    game(board1)
+
+
+
+board1 = [["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"],
+          ["🔵","🔵","🔵","🔵","🔵","🔵","🔵"]]
+
+
+game(board1) # starts game
+
+# by William Allen
+# made for CVMS STEM class 'You choose' project 2024
+# play the game by clicking the play button/run cell/ ctrl+enter
+# depth setting is currently on 5, if you want it to be harder, then make a copy of this notebook, and change depth the 5 in the line under print("Calculating...") to 6 or 7
